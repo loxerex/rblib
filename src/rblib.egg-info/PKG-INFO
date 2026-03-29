@@ -1,0 +1,9 @@
+Metadata-Version: 2.4
+Name: rblib
+Version: 0.0a1
+Summary: Base Roblox Python library
+Author: Loxer
+License-File: LICENSE
+Requires-Dist: numpy
+Requires-Dist: opencv-python
+Dynamic: license-file
