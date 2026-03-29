@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "rblib"
-version = "0.0.a1"
-description = "Base Roblox Python library"
+version = "0.12"
+description = "Roblox Python library"
 authors = [
     { name = "Loxer" }
 ]
