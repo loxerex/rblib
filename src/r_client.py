@@ -7,7 +7,7 @@ import signal
 import uuid
 import requests
 import re
-from r_account import Account
+from .r_account import Account
 import time
 # DLLs
 user32 = ctypes.windll.user32

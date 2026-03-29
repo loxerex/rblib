@@ -1,7 +1,7 @@
 import ctypes
 import time
 import atexit
-from r_client import get_roblox_hwnd, get_geometry
+from .r_client import get_roblox_hwnd, get_geometry
 #Type
 INPUT_KEYBOARD = 1
 INPUT_MOUSE = 0

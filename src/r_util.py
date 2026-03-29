@@ -1,7 +1,7 @@
 import cv2
 import numpy
-from r_client import get_geometry, get_roblox_hwnd
-from r_input import Click, RightClick
+from .r_client import get_geometry, get_roblox_hwnd
+from .r_input import Click, RightClick
 from dataclasses import dataclass
 import atexit
 import ctypes
@@ -185,7 +185,6 @@ def imageLocation(path: str, confidence: float, grayscale: bool | None=None, thr
     rect = get_geometry(get_roblox_hwnd())
     region =  (rect.x,rect.y,rect.w+rect.x,rect.h+rect.y) if region is None else (rect.x+region[0], rect.y+region[1], rect.x+region[0]+region[2], rect.y+region[1]+region[3])
     template = cached_images.get(path)
-    print(region)
     if template is None:
         template_cv2 = cv2.imread(path)
         cached_images[path] = template_cv2 
@@ -335,7 +334,7 @@ Capture a specific rectangular region of the screen and return it as a
 
     Args:
         region (tuple[int, int, int, int]):
-            The screen region to capture in (x, y, width, height) format.
+            The screen region to capture in (x, y, x2, y2) format.
 
     Returns:
         numpy.ndarray:
@@ -347,14 +346,14 @@ Capture a specific rectangular region of the screen and return it as a
     """
     global screen_bitmap, old_bitmap
     if len(cached_sregion) == 0:
-        screen_bitmap = gdi32.CreateCompatibleBitmap(sdc, region[2]+region[0], region[3]+region[1])
+        screen_bitmap = gdi32.CreateCompatibleBitmap(sdc, region[2]-region[0], region[3]-region[1])
         old_bitmap = gdi32.SelectObject(hdc_mem, screen_bitmap)
         cached_sregion['region'] = region
     else:
         if cached_sregion["region"][2] != region[2] and cached_sregion["region"][3] != region[3]:
             gdi32.SelectObject(hdc_mem, old_bitmap)
             gdi32.DeleteObject(screen_bitmap)
-            screen_bitmap = gdi32.CreateCompatibleBitmap(sdc, region[2], region[3])
+            screen_bitmap = gdi32.CreateCompatibleBitmap(sdc, region[2]-region[0], region[3]-region[1])
             
             gdi32.SelectObject(hdc_mem, screen_bitmap)
             cached_sregion['region'] = region
@@ -370,6 +369,7 @@ Capture a specific rectangular region of the screen and return it as a
     gdi32.GetDIBits(hdc_mem, screen_bitmap, 0, region[3]-region[1], buffer, ctypes.byref(bmi), 0)
     n_arr = numpy.frombuffer(buffer, dtype=numpy.uint8).reshape((region[3]-region[1], region[2]-region[0], 4))[:,:,:3]
     return n_arr
+
 def pixelInRegion(pixelColor: tuple[int,int,int], region: tuple[int,int,int,int], tolerance: int = 0) -> tuple[bool,int,int]:
     """
     Check whether a pixel of a specific RGB color exists within a given region
@@ -445,3 +445,4 @@ def release_sdc():
     """
     gdi32.DeleteDC(hdc_mem)
     user32.ReleaseDC(0, sdc)
+
