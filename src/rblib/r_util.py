@@ -1,26 +1,28 @@
-import cv2
-import numpy
-from .r_client import get_geometry, get_roblox_hwnd
-from .r_input import Click, RightClick
-from dataclasses import dataclass
 import atexit
 import ctypes
 from ctypes import wintypes
+from dataclasses import dataclass
 
+import cv2
+import numpy
 
-#dlls
+from .r_client import get_geometry, get_roblox_hwnd
+from .r_input import Click, RightClick
+
+# dlls
 user32 = ctypes.windll.user32
 gdi32 = ctypes.windll.gdi32
 
-#cache
+# cache
 cached_images = {}
 cached_sregion = {}
-sdc = user32.GetDC(0)     
-hdc_mem = gdi32.CreateCompatibleDC(sdc)
+
+
 screen_bitmap = None
 old_bitmap = None
 
-#classes
+
+# classes
 @dataclass
 class Box:
     x: int
@@ -38,6 +40,7 @@ class Box:
                 The (x, y) center coordinate of the box.
         """
         return (self.x + self.w // 2, self.y + self.h // 2)
+
     @property
     def top_left(self) -> tuple[int, int]:
         """
@@ -48,6 +51,7 @@ class Box:
                 The (x, y) coordinate of the top-left corner.
         """
         return (self.x, self.y)
+
     @property
     def bottom_right(self) -> tuple[int, int]:
         """
@@ -68,19 +72,33 @@ class Box:
                 The box as (x, y, w, h).
         """
         return (self.x, self.y, self.w, self.h)
-    
+
+
 class BITMAPINFOHEADER(ctypes.Structure):
     _fields_ = [
-        ("biSize", wintypes.DWORD), ("biWidth", ctypes.c_long),
-        ("biHeight", ctypes.c_long), ("biPlanes", wintypes.WORD),
-        ("biBitCount", wintypes.WORD), ("biCompression", wintypes.DWORD),
-        ("biSizeImage", wintypes.DWORD), ("biXPelsPerMeter", ctypes.c_long),
-        ("biYPelsPerMeter", ctypes.c_long), ("biClrUsed", wintypes.DWORD),
-        ("biClrImportant", wintypes.DWORD)
-    ]   
+        ("biSize", wintypes.DWORD),
+        ("biWidth", ctypes.c_long),
+        ("biHeight", ctypes.c_long),
+        ("biPlanes", wintypes.WORD),
+        ("biBitCount", wintypes.WORD),
+        ("biCompression", wintypes.DWORD),
+        ("biSizeImage", wintypes.DWORD),
+        ("biXPelsPerMeter", ctypes.c_long),
+        ("biYPelsPerMeter", ctypes.c_long),
+        ("biClrUsed", wintypes.DWORD),
+        ("biClrImportant", wintypes.DWORD),
+    ]
 
-#funcs
-def imageExists(path: str, confidence: float, grayscale: bool | None=None, threshold: tuple[int,int] | None = None, region: tuple[int,int,int,int] | None=None, matchTemplate: int=cv2.TM_CCOEFF_NORMED) -> bool:
+
+# funcs
+def imageExists(
+    path: str,
+    confidence: float,
+    grayscale: bool | None = None,
+    threshold: tuple[int, int] | None = None,
+    region: tuple[int, int, int, int] | None = None,
+    matchTemplate: int = cv2.TM_CCOEFF_NORMED,
+) -> bool:
     """
     Check whether a template image exists within the Roblox window or a
     specified region of it.
@@ -112,44 +130,63 @@ def imageExists(path: str, confidence: float, grayscale: bool | None=None, thres
         improve repeated search performance.
     """
     grayscale = True if grayscale is None else grayscale
-    threshold = threshold or (0,255)
-    
+    threshold = threshold or (0, 255)
+
     rect = get_geometry(get_roblox_hwnd())
-    region =  (rect.x,rect.y,rect.w+rect.x,rect.h+rect.y) if region is None else (rect.x+region[0], rect.y+region[1], rect.x+region[0]+region[2], rect.y+region[1]+region[3])
+    region = (
+        (rect.x, rect.y, rect.w + rect.x, rect.h + rect.y)
+        if region is None
+        else (
+            rect.x + region[0],
+            rect.y + region[1],
+            rect.x + region[0] + region[2],
+            rect.y + region[1] + region[3],
+        )
+    )
     template = cached_images.get(path)
 
     if template is None:
         template_cv2 = cv2.imread(path)
-        cached_images[path] = template_cv2 
+        cached_images[path] = template_cv2
         template = template_cv2
 
     template = template.copy()
-    
-    comparison_cv2 = captureRegion(region=(region[0],region[1],region[2],region[3]))
+
+    comparison_cv2 = captureRegion(region=(region[0], region[1], region[2], region[3]))
     h_img, w_img = comparison_cv2.shape[:2]
     h_temp, w_temp = template.shape[:2]
 
     if w_img < w_temp or h_img < h_temp:
         return False
     if grayscale:
-        template = cv2.cvtColor(template,cv2.COLOR_BGR2GRAY)
-        comparison_cv2 = cv2.cvtColor(comparison_cv2,cv2.COLOR_BGR2GRAY)
-    
-    if threshold != (0,255):
-        _, template = cv2.threshold(template, threshold[0], threshold[1], cv2.THRESH_BINARY_INV)
-        _, comparison_cv2 = cv2.threshold(comparison_cv2, threshold[0], threshold[1], cv2.THRESH_BINARY_INV)
+        template = cv2.cvtColor(template, cv2.COLOR_BGR2GRAY)
+        comparison_cv2 = cv2.cvtColor(comparison_cv2, cv2.COLOR_BGR2GRAY)
+
+    if threshold != (0, 255):
+        _, template = cv2.threshold(
+            template, threshold[0], threshold[1], cv2.THRESH_BINARY_INV
+        )
+        _, comparison_cv2 = cv2.threshold(
+            comparison_cv2, threshold[0], threshold[1], cv2.THRESH_BINARY_INV
+        )
 
     result = cv2.matchTemplate(
-        image=comparison_cv2,
-        templ=template,
-        method=matchTemplate
-        )
+        image=comparison_cv2, templ=template, method=matchTemplate
+    )
     _, max_val, _, _ = cv2.minMaxLoc(result)
     if max_val >= confidence:
         return True
     return False
 
-def imageLocation(path: str, confidence: float, grayscale: bool | None=None, threshold: tuple[int,int] | None = None, region: tuple[int,int,int,int] | None=None, matchTemplate: int=cv2.TM_CCOEFF_NORMED) -> Box | None:
+
+def imageLocation(
+    path: str,
+    confidence: float,
+    grayscale: bool | None = None,
+    threshold: tuple[int, int] | None = None,
+    region: tuple[int, int, int, int] | None = None,
+    matchTemplate: int = cv2.TM_CCOEFF_NORMED,
+) -> Box | None:
     """
     Find the location of a template image within the Roblox window or a
     specified region of it.
@@ -181,47 +218,68 @@ def imageLocation(path: str, confidence: float, grayscale: bool | None=None, thr
         improve repeated search performance.
     """
     grayscale = True if grayscale is None else grayscale
-    threshold = threshold or (0,255)
+    threshold = threshold or (0, 255)
     rect = get_geometry(get_roblox_hwnd())
-    region =  (rect.x,rect.y,rect.w+rect.x,rect.h+rect.y) if region is None else (rect.x+region[0], rect.y+region[1], rect.x+region[0]+region[2], rect.y+region[1]+region[3])
+    region = (
+        (rect.x, rect.y, rect.w + rect.x, rect.h + rect.y)
+        if region is None
+        else (
+            rect.x + region[0],
+            rect.y + region[1],
+            rect.x + region[0] + region[2],
+            rect.y + region[1] + region[3],
+        )
+    )
     template = cached_images.get(path)
     if template is None:
         template_cv2 = cv2.imread(path)
-        cached_images[path] = template_cv2 
+        cached_images[path] = template_cv2
         template = template_cv2
 
     template = template.copy()
-    
-    comparison_cv2 = captureRegion(region=(region[0],region[1],region[2],region[3]))
+
+    comparison_cv2 = captureRegion(region=(region[0], region[1], region[2], region[3]))
     h_img, w_img = comparison_cv2.shape[:2]
     h_temp, w_temp = template.shape[:2]
 
     if w_img < w_temp or h_img < h_temp:
         return False
     if grayscale:
-        template = cv2.cvtColor(template,cv2.COLOR_BGR2GRAY)
-        comparison_cv2 = cv2.cvtColor(comparison_cv2,cv2.COLOR_BGR2GRAY)
-    
-    if threshold != (0,255):
-        _, template = cv2.threshold(template, threshold[0], threshold[1], cv2.THRESH_BINARY_INV)
-        _, comparison_cv2 = cv2.threshold(comparison_cv2, threshold[0], threshold[1], cv2.THRESH_BINARY_INV)
+        template = cv2.cvtColor(template, cv2.COLOR_BGR2GRAY)
+        comparison_cv2 = cv2.cvtColor(comparison_cv2, cv2.COLOR_BGR2GRAY)
+
+    if threshold != (0, 255):
+        _, template = cv2.threshold(
+            template, threshold[0], threshold[1], cv2.THRESH_BINARY_INV
+        )
+        _, comparison_cv2 = cv2.threshold(
+            comparison_cv2, threshold[0], threshold[1], cv2.THRESH_BINARY_INV
+        )
 
     result = cv2.matchTemplate(
-        image=comparison_cv2,
-        templ=template,
-        method=matchTemplate
-        )
+        image=comparison_cv2, templ=template, method=matchTemplate
+    )
     _, max_val, _, max_loc = cv2.minMaxLoc(result)
     if max_val >= confidence:
         geometry = list((*max_loc, *template.shape[:2]))
-        #swap h,w so its x,y,w,h
-        geometry[2]= geometry[2] ^ geometry[3]
-        geometry[3]= geometry[2] ^ geometry[3]
-        geometry[2]= geometry[2] ^ geometry[3]
+        # swap h,w so its x,y,w,h
+        geometry[2] = geometry[2] ^ geometry[3]
+        geometry[3] = geometry[2] ^ geometry[3]
+        geometry[2] = geometry[2] ^ geometry[3]
         return Box(*geometry)
     return None
 
-def clickImage(click: int, delay: float, path: str, confidence: float, grayscale: bool | None=None, threshold: tuple[int,int] | None = None, region: tuple[int,int,int,int] | None=None, matchTemplate: int=cv2.TM_CCOEFF_NORMED) -> bool:
+
+def clickImage(
+    click: int,
+    delay: float,
+    path: str,
+    confidence: float,
+    grayscale: bool | None = None,
+    threshold: tuple[int, int] | None = None,
+    region: tuple[int, int, int, int] | None = None,
+    matchTemplate: int = cv2.TM_CCOEFF_NORMED,
+) -> bool:
     """
     Locate a template image and click its center point.
 
@@ -251,32 +309,34 @@ def clickImage(click: int, delay: float, path: str, confidence: float, grayscale
         bool:
             True if the image was found and clicked successfully, otherwise False.
     """
-    result = imageLocation(path=path,confidence=confidence,grayscale=grayscale,threshold=threshold,region=region,matchTemplate=matchTemplate)
+    result = imageLocation(
+        path=path,
+        confidence=confidence,
+        grayscale=grayscale,
+        threshold=threshold,
+        region=region,
+        matchTemplate=matchTemplate,
+    )
     if result is None:
         return False
     result = result.center
     if click == 0:
-        Click(
-            x=result[0],
-            y=result[1],
-            delay=delay
-        )
+        Click(x=result[0], y=result[1], delay=delay)
     else:
-        RightClick(
-            x=result[0],
-            y=result[1],
-            delay=delay
-        )
+        RightClick(x=result[0], y=result[1], delay=delay)
     return True
-def pixel(x:int,y:int,relative=True) -> tuple[int,int,int]:
+
+
+def pixel(x: int, y: int, relative=True) -> tuple[int, int, int]:
+    sdc = user32.GetDC(0)
     """
     Get the RGB color of a pixel within the Roblox window.
 
     Args:
         x (int):
-            X-coordinate 
+            X-coordinate
         y (int):
-            Y-coordinate  
+            Y-coordinate
         relative (bool):
             Whether the provided coordinates are relative to the Roblox window.
 
@@ -292,15 +352,20 @@ def pixel(x:int,y:int,relative=True) -> tuple[int,int,int]:
         rect = get_geometry(get_roblox_hwnd())
         x += rect.x
         y += rect.y
-    color = gdi32.GetPixel(sdc,x,y)
-    rgbRed   =  0x000000FF
-    rgbGreen =  0x0000FF00
-    rgbBlue  =  0x00FF0000
-    r = color&rgbRed
-    g = (color&rgbGreen)>>8
-    b = (color&rgbBlue)>>16
-    return (r,g,b)
-def pixelMatchesColor(x:int,y:int,expectedRGB:tuple[int,int,int],tolerance:int=0) -> bool:
+    color = gdi32.GetPixel(sdc, x, y)
+    rgbRed = 0x000000FF
+    rgbGreen = 0x0000FF00
+    rgbBlue = 0x00FF0000
+    r = color & rgbRed
+    g = (color & rgbGreen) >> 8
+    b = (color & rgbBlue) >> 16
+    user32.ReleaseDC(0, sdc)
+    return (r, g, b)
+
+
+def pixelMatchesColor(
+    x: int, y: int, expectedRGB: tuple[int, int, int], tolerance: int = 0
+) -> bool:
     """
     Check whether a pixel within the Roblox window matches an expected RGB
     color within a given tolerance.
@@ -319,58 +384,75 @@ def pixelMatchesColor(x:int,y:int,expectedRGB:tuple[int,int,int],tolerance:int=0
         bool:
             True if the pixel matches within tolerance, otherwise False.
     """
-    r,g,b = pixel(x,y)
-    return all([
-        r >= expectedRGB[0]-tolerance and r <= expectedRGB[0]+tolerance, 
-        g >= expectedRGB[1]-tolerance and g <= expectedRGB[1]+tolerance,
-        b >= expectedRGB[2]-tolerance and b <= expectedRGB[2]+tolerance
-        ])
+    r, g, b = pixel(x, y)
+    return all(
+        [
+            r >= expectedRGB[0] - tolerance and r <= expectedRGB[0] + tolerance,
+            g >= expectedRGB[1] - tolerance and g <= expectedRGB[1] + tolerance,
+            b >= expectedRGB[2] - tolerance and b <= expectedRGB[2] + tolerance,
+        ]
+    )
 
 
 def captureRegion(region: tuple[int, int, int, int]) -> numpy.ndarray:
-    """
-Capture a specific rectangular region of the screen and return it as a
-    NumPy array.
+    sdc = user32.GetDC(0)
+    hdc_mem = gdi32.CreateCompatibleDC(sdc)
 
-    Args:
-        region (tuple[int, int, int, int]):
-            The screen region to capture in (x, y, x2, y2) format.
-
-    Returns:
-        numpy.ndarray:
-            The captured image as a (height, width, 3) array with BGR channels.
-
-    Notes:
-        Uses GDI for fast screen capture. Internal caching is used to
-        reuse bitmap objects for performance.
-    """
     global screen_bitmap, old_bitmap
+
+    width = region[2] - region[0]
+    height = region[3] - region[1]
+
     if len(cached_sregion) == 0:
-        screen_bitmap = gdi32.CreateCompatibleBitmap(sdc, region[2]-region[0], region[3]-region[1])
+        screen_bitmap = gdi32.CreateCompatibleBitmap(sdc, width, height)
         old_bitmap = gdi32.SelectObject(hdc_mem, screen_bitmap)
-        cached_sregion['region'] = region
+        cached_sregion["region"] = region
+
     else:
-        if cached_sregion["region"][2] != region[2] and cached_sregion["region"][3] != region[3]:
+        if (
+            cached_sregion["region"][2] != region[2]
+            or cached_sregion["region"][3] != region[3]
+        ):
             gdi32.SelectObject(hdc_mem, old_bitmap)
             gdi32.DeleteObject(screen_bitmap)
-            screen_bitmap = gdi32.CreateCompatibleBitmap(sdc, region[2]-region[0], region[3]-region[1])
-            
+
+            screen_bitmap = gdi32.CreateCompatibleBitmap(sdc, width, height)
+            old_bitmap = gdi32.SelectObject(hdc_mem, screen_bitmap)
+
+            cached_sregion["region"] = region
+        else:
             gdi32.SelectObject(hdc_mem, screen_bitmap)
-            cached_sregion['region'] = region
-    gdi32.BitBlt(hdc_mem, 0, 0, region[2]-region[0], region[3]-region[1], sdc, region[0], region[1], 0x00CC0020)
+
+    # Capture
+    gdi32.BitBlt(hdc_mem, 0, 0, width, height, sdc, region[0], region[1], 0x00CC0020)
+
+    # Prepare buffer
     bmi = BITMAPINFOHEADER()
     bmi.biSize = ctypes.sizeof(BITMAPINFOHEADER)
-    bmi.biWidth = region[2]-region[0]
-    bmi.biHeight = -(region[3]-region[1])
+    bmi.biWidth = width
+    bmi.biHeight = -height
     bmi.biPlanes = 1
     bmi.biBitCount = 32
     bmi.biCompression = 0
-    buffer = ctypes.create_string_buffer((region[2]-region[0]) * (region[3]-region[1]) * 4)
-    gdi32.GetDIBits(hdc_mem, screen_bitmap, 0, region[3]-region[1], buffer, ctypes.byref(bmi), 0)
-    n_arr = numpy.frombuffer(buffer, dtype=numpy.uint8).reshape((region[3]-region[1], region[2]-region[0], 4))[:,:,:3]
-    return n_arr
 
-def pixelInRegion(pixelColor: tuple[int,int,int], region: tuple[int,int,int,int], tolerance: int = 0) -> tuple[bool,int,int]:
+    buffer = ctypes.create_string_buffer(width * height * 4)
+    gdi32.GetDIBits(hdc_mem, screen_bitmap, 0, height, buffer, ctypes.byref(bmi), 0)
+
+    arr = numpy.frombuffer(buffer, dtype=numpy.uint8).reshape((height, width, 4))[
+        :, :, :3
+    ]
+
+    user32.ReleaseDC(0, sdc)
+    gdi32.DeleteDC(hdc_mem)
+
+    return arr
+
+
+def pixelInRegion(
+    pixelColor: tuple[int, int, int],
+    region: tuple[int, int, int, int],
+    tolerance: int = 0,
+) -> tuple[bool, int, int]:
     """
     Check whether a pixel of a specific RGB color exists within a given region
     of the Roblox window.
@@ -389,19 +471,33 @@ def pixelInRegion(pixelColor: tuple[int,int,int], region: tuple[int,int,int,int]
             and the coordinates (x, y) of the first matching pixel, or (-1, -1) if none is found.
     """
     rect = get_geometry(get_roblox_hwnd())
-    comparison_bgr = captureRegion(region=(rect.x+region[0],rect.y+region[1],rect.x+region[0]+region[2],rect.y+region[1]+region[3]))
+    comparison_bgr = captureRegion(
+        region=(
+            rect.x + region[0],
+            rect.y + region[1],
+            rect.x + region[0] + region[2],
+            rect.y + region[1] + region[3],
+        )
+    )
     for y in range(comparison_bgr.shape[0]):
         for x in range(comparison_bgr.shape[1]):
-            b,g,r = comparison_bgr[y,x]
-            if all([
-                r >= pixelColor[0]-tolerance and r <= pixelColor[0]+tolerance,
-                g >= pixelColor[1]-tolerance and g <= pixelColor[1]+tolerance,
-                b >= pixelColor[2]-tolerance and b <= pixelColor[2]+tolerance
-                ]):
-                return (True, region[0]+x, region[1]+y)
+            b, g, r = comparison_bgr[y, x]
+            if all(
+                [
+                    r >= pixelColor[0] - tolerance and r <= pixelColor[0] + tolerance,
+                    g >= pixelColor[1] - tolerance and g <= pixelColor[1] + tolerance,
+                    b >= pixelColor[2] - tolerance and b <= pixelColor[2] + tolerance,
+                ]
+            ):
+                return (True, region[0] + x, region[1] + y)
     return (False, -1, -1)
 
-def allPixelsInRegion(pixelColor: tuple[int,int,int], region: tuple[int,int,int,int], tolerance: int = 0) -> list[tuple[int, int]]:
+
+def allPixelsInRegion(
+    pixelColor: tuple[int, int, int],
+    region: tuple[int, int, int, int],
+    tolerance: int = 0,
+) -> list[tuple[int, int]]:
     """
     Find all pixels of a specific RGB color within a given region of the Roblox
 
@@ -419,30 +515,23 @@ def allPixelsInRegion(pixelColor: tuple[int,int,int], region: tuple[int,int,int,
     """
     pixels = []
     rect = get_geometry(get_roblox_hwnd())
-    comparison_bgr = captureRegion(region=(rect.x+region[0],rect.y+region[1],rect.x+region[0]+region[2],rect.y+region[1]+region[3]))
+    comparison_bgr = captureRegion(
+        region=(
+            rect.x + region[0],
+            rect.y + region[1],
+            rect.x + region[0] + region[2],
+            rect.y + region[1] + region[3],
+        )
+    )
     for y in range(comparison_bgr.shape[0]):
         for x in range(comparison_bgr.shape[1]):
-            b,g,r = comparison_bgr[y,x]
-            if all([
-                r >= pixelColor[0]-tolerance and r <= pixelColor[0]+tolerance,
-                g >= pixelColor[1]-tolerance and g <= pixelColor[1]+tolerance,
-                b >= pixelColor[2]-tolerance and b <= pixelColor[2]+tolerance
-                ]):
-                pixels.append((region[0]+x, region[1]+y))
+            b, g, r = comparison_bgr[y, x]
+            if all(
+                [
+                    r >= pixelColor[0] - tolerance and r <= pixelColor[0] + tolerance,
+                    g >= pixelColor[1] - tolerance and g <= pixelColor[1] + tolerance,
+                    b >= pixelColor[2] - tolerance and b <= pixelColor[2] + tolerance,
+                ]
+            ):
+                pixels.append((region[0] + x, region[1] + y))
     return pixels
-
-
-
-@atexit.register
-def release_sdc():
-    """
-    Release GDI device contexts and clean up resources on program exit.
-
-    Notes:
-        This function is automatically called when the Python program exits,
-        ensuring that the compatible DC and screen DC are properly released
-        to avoid resource leaks.
-    """
-    gdi32.DeleteDC(hdc_mem)
-    user32.ReleaseDC(0, sdc)
-
